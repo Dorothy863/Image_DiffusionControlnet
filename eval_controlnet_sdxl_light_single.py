@@ -3,6 +3,7 @@ import PIL
 import time
 import torch
 import argparse
+import gc
 
 from typing import Optional, Union
 from accelerate import Accelerator
@@ -14,7 +15,10 @@ from diffusers import (
 )
 from transformers import (
     BlipProcessor, BlipForConditionalGeneration, 
-    VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
+    VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer,
+    CLIPTokenizer, CLIPTextModel, CLIPTextModelWithProjection,
+    CLIPImageProcessor, CLIPVisionModel, CLIPVisionModelWithProjection,
+    AutoProcessor
 )
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
@@ -125,7 +129,8 @@ def parse_args(input_args=None):
 
     return args
 
-def apply_color(image, color_map):
+import cv2
+def apply_color(image:PIL.Image, color_map:PIL.Image):
     # Convert input images to LAB color space
     image_lab = image.convert('LAB')
     color_map_lab = color_map.convert('LAB')
@@ -231,6 +236,23 @@ def blip_image_captioning(image: PIL.Image.Image,
     caption = processor.decode(out[0], skip_special_tokens=True)
     return caption
 
+def clip_image_embedding(image: PIL.Image.Image,
+                          model_name_or_path: str) -> str:
+    # https://huggingface.co/ViT-L-14/openai
+    # https://huggingface.co/ViT-H-14/laion2b_s32b_b79k
+    model = CLIPVisionModelWithProjection.from_pretrained(f"{model_name_or_path}")
+    image_processor = AutoProcessor.from_pretrained(f"{model_name_or_path}")
+    
+    image_inputs = image_processor(images=image, return_tensors="pt")
+    with torch.no_grad():
+        image_features = model(image_inputs.pixel_values)
+
+    del model, image_processor
+    gc.collect()
+    torch.cuda.empty_cache()
+    
+    return image_features[0]
+
 import matplotlib.pyplot as plt
 
 def display_images(input_image, output_image, ground_truth):
@@ -281,6 +303,9 @@ def process_image(image_path: str,
     accelerator = Accelerator(
         mixed_precision=mixed_precision,
     )
+
+    image = PIL.Image.open(image_path)
+    control_image_embedding = clip_image_embedding(image, "/workspace/sd_models/CLIP-ViT-bigG-14-laion2B-39B-b160k")
     
     weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
@@ -324,10 +349,9 @@ def process_image(image_path: str,
     )
     pipe.to(accelerator.device, dtype=weight_dtype)
 
-    image = PIL.Image.open(image_path)
-
     # Prepare everything with our `accelerator`.
-    pipe, image = accelerator.prepare(pipe, image)
+    control_image_embedding = control_image_embedding.to("cuda").to(weight_dtype)
+    pipe, image, control_image_embedding = accelerator.prepare(pipe, image, control_image_embedding)
     pipe.safety_checker = None
 
     # Convert image into grayscale
@@ -358,7 +382,8 @@ def process_image(image_path: str,
                  negative_prompt=negative_prompt, 
                  num_inference_steps=num_inference_steps, 
                  generator=generator, 
-                 image=control_image).images[0]
+                 image=control_image,
+                 control_image_embedding=control_image_embedding).images[0]
     
     # Apply color mapping
     result_image = apply_color(control_image, image)
@@ -387,4 +412,10 @@ def main(args):
 # Entry point of the script
 if __name__ == "__main__":
     args = parse_args()
-    main(args)
+    output_image, output_caption = main(args)
+    print("================================================================")
+    print(f"Caption results: \n>>> {output_caption}")
+    print("================================================================")
+    # save the output image PIL
+    output_image.save("output_image.jpg")
+    print("Output image saved as 'output_image.jpg'")

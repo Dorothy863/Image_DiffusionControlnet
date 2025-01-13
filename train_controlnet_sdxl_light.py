@@ -693,14 +693,21 @@ def get_train_dataset(args, accelerator):
             )
 
     if args.caption_column is None:
-        caption_column = column_names[1]
-        logger.info(f"caption column defaulting to {caption_column}")
+        raise ValueError(
+                 f"""`--caption_column` value '{args.caption_column}' should be input, \n 
+                 if need empty prompt should input a name not found in dataset columns. \n
+                 Dataset columns are: {', '.join(column_names)}"""
+             )
     else:
         caption_column = args.caption_column
         if caption_column not in column_names:
-            raise ValueError(
-                f"`--caption_column` value '{args.caption_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
-            )
+            # if not in column_names, set prompt as empty
+            args.caption_column = None
+            print(f"""Warning: caption_column:{caption_column} not found in dataset columns. Setting prompt as empty. \n
+                   Dataset columns are: {', '.join(column_names)}""")
+            # raise ValueError(
+            #     f"`--caption_column` value '{args.caption_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
+            # )
 
     if args.conditioning_image_column is None:
         conditioning_image_column = column_names[2]
@@ -714,8 +721,9 @@ def get_train_dataset(args, accelerator):
 
     with accelerator.main_process_first():
         train_dataset = dataset["train"].shuffle(seed=args.seed)
+        # select the max from args or the length of the dataset
         if args.max_train_samples is not None:
-            train_dataset = train_dataset.select(range(args.max_train_samples))
+            train_dataset = train_dataset.select(range(min(args.max_train_samples, len(train_dataset))))
     return train_dataset
 
 
@@ -772,10 +780,11 @@ def prepare_train_dataset(dataset, accelerator):
 
     conditioning_image_transforms = transforms.Compose(
         [
-            transforms.Grayscale(num_output_channels=3), # convert to grayscale image
+            # transforms.Grayscale(num_output_channels=3), # convert to grayscale image
             transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
             transforms.CenterCrop(args.resolution),
             transforms.ToTensor(),
+            transforms.Normalize([0.5], [0.5]),
         ]
     )
 
@@ -915,7 +924,7 @@ def main(args):
         variant=args.variant,
     )
     print(vae)
-    input()
+    # input()
     # unet = UNet2DConditionModel.from_pretrained(
     #     args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
     # )
@@ -1059,7 +1068,7 @@ def main(args):
         original_size = (args.resolution, args.resolution)
         target_size = (args.resolution, args.resolution)
         crops_coords_top_left = (args.crops_coords_top_left_h, args.crops_coords_top_left_w)
-        prompt_batch = batch[args.caption_column]
+        prompt_batch = batch[args.caption_column] if args.caption_column is not None else [""] * len(list(batch[list(batch.data.keys())[0]]))
 
         prompt_embeds, pooled_prompt_embeds = encode_prompt(
             prompt_batch, text_encoders, tokenizers, proportion_empty_prompts, is_train
