@@ -59,7 +59,7 @@ if is_wandb_available():
     import wandb
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
-check_min_version("0.28.0.dev0")
+check_min_version("0.32.0.dev0")
 
 logger = get_logger(__name__)
 
@@ -647,14 +647,21 @@ def make_train_dataset(args, tokenizer, accelerator):
             )
 
     if args.caption_column is None:
-        caption_column = column_names[1]
-        logger.info(f"caption column defaulting to {caption_column}")
+        raise ValueError(
+                 f"""`--caption_column` value '{args.caption_column}' should be input, \n 
+                 if need empty prompt should input a name not found in dataset columns. \n
+                 Dataset columns are: {', '.join(column_names)}"""
+             )
     else:
         caption_column = args.caption_column
         if caption_column not in column_names:
-            raise ValueError(
-                f"`--caption_column` value '{args.caption_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
-            )
+            # if not in column_names, set prompt as empty
+            args.caption_column = None
+            print(f"""Warning: caption_column:{caption_column} not found in dataset columns. Setting prompt as empty. \n
+                   Dataset columns are: {', '.join(column_names)}""")
+            # raise ValueError(
+            #     f"`--caption_column` value '{args.caption_column}' not found in dataset columns. Dataset columns are: {', '.join(column_names)}"
+            # )
 
     if args.conditioning_image_column is None:
         conditioning_image_column = column_names[2]
@@ -696,7 +703,6 @@ def make_train_dataset(args, tokenizer, accelerator):
 
     conditioning_image_transforms = transforms.Compose(
         [
-            transforms.Grayscale(num_output_channels=3), # convert to grayscale image
             transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
             transforms.CenterCrop(args.resolution),
             transforms.ToTensor(),
@@ -712,13 +718,14 @@ def make_train_dataset(args, tokenizer, accelerator):
 
         examples["pixel_values"] = images
         examples["conditioning_pixel_values"] = conditioning_images
+        if args.caption_column == None: examples[caption_column] = [""] * len(images)
         examples["input_ids"] = tokenize_captions(examples)
 
         return examples
 
     with accelerator.main_process_first():
         if args.max_train_samples is not None:
-            dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+            dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(min(args.max_train_samples, len(dataset["train"]))))
         # Set the training transforms
         train_dataset = dataset["train"].with_transform(preprocess_train)
 
@@ -935,6 +942,8 @@ def main(args):
         collate_fn=collate_fn,
         batch_size=args.train_batch_size,
         num_workers=args.dataloader_num_workers,
+        prefetch_factor=8,
+        pin_memory=True,
     )
 
     # Scheduler and math around the number of training steps.
@@ -1055,7 +1064,9 @@ def main(args):
 
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
-                noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
+                noisy_latents = noise_scheduler.add_noise(latents.float(), noise.float(), timesteps).to(
+                    dtype=weight_dtype
+                )
 
                 # Get the text embedding for conditioning
                 encoder_hidden_states = text_encoder(batch["input_ids"], return_dict=False)[0]

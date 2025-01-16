@@ -6,4 +6,5 @@ ftfy
 tensorboard
 datasets
 bitsandbytes
-git+https://github.com/huggingface/diffusers
+# xformers==0.0.26.post1
+# git+https://github.com/huggingface/diffusers

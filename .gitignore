@@ -1,5 +1,9 @@
 # dataset
 LOL/
+HAZE_RESIDE/
+Rain200H/
+
+# model result
 sdxl_light_caption_output/
 test/
 

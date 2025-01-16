@@ -44,36 +44,95 @@
                 "PYTHONPATH": "${workspaceFolder}",
             },
             "args": [
-                "--pretrained_model_name_or_path=stabilityai/stable-diffusion-xl-base-1.0",
+                "--pretrained_model_name_or_path=/data/coding/upload-data/data/sd_models/stable-diffusion-xl-base-1.0",
                 "--output_dir=test",
                 "--tracker_project_name=train_sdxl_light_controlnet",
                 "--seed=123123",
-                "--dataset_name=Hundertdreizehn/sd_training_lol",
-                "--dataset_revision=path_only",
-                "--image_column=high_light_image",
-                "--conditioning_image_column=low_light_image",
                 "--caption_column=caption",
-                "--max_train_samples=100000",
-                "--num_validation_images=1",
+
                 "--resolution=512",
-                "--num_train_epochs=5",
+                "--num_train_epochs=1",
                 "--dataloader_num_workers=8",
                 "--learning_rate=1e-5",
                 "--train_batch_size=2",
-                "--gradient_accumulation_steps=8",
-                "--proportion_empty_prompts=0",
-                "--validation_steps=500",
-                "--checkpointing_steps=2500",
+
+                "--gradient_accumulation_steps=4", // should be 4 times tran_batch_size ? origin is 8
                 "--mixed_precision=fp16",
-                "--gradient_checkpointing",
-                "--use_8bit_adam",
-                "--repo=ByteDance/SDXL-Lightning",
+                // "--gradient_checkpointing",
+                // "--use_8bit_adam",
+                // "--enable_xformers_memory_efficient_attention",
+
+                "--proportion_empty_prompts=0",
+                "--validation_steps=1",
+                "--checkpointing_steps=2",
+                "--repo=/data/coding/upload-data/data/sd_models/SDXL-Lightning",
                 "--ckpt=sdxl_lightning_8step_unet.safetensors",
                 "--num_inference_steps=8",
-                "--enable_xformers_memory_efficient_attention"
+
+                "--max_train_samples=4",
+                "--num_validation_images=1",
+                
+                "--dataset_name=/data/coding/upload-data/data/sd_models/sd_training_Rain200H/",
+                "--dataset_revision=",
+                "--image_column=target_input",
+                "--conditioning_image_column=control_input",
+                "--validation_image", "Rain200H/train/input/5.png", "Rain200H/train/input/10.png", "Rain200H/train/input/15.png", "Rain200H/train/input/24.png", "Rain200H/train/input/486.png", "Rain200H/train/input/784.png",
+                "--validation_prompt", "", "", "", "", "", "",
+                // "--resume_from_checkpoint=latest"
             ],
             "justMyCode": false
         },
+
+        {
+            "name": "Launch train_controlnet_sd1.5",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_controlnet.py",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+            },
+            "args": [
+                "--pretrained_model_name_or_path=/data/coding/upload-data/data/sd_models/stable-diffusion-v1-5/",
+                "--output_dir=test",
+                "--tracker_project_name=train_controlnet",
+                "--seed=123123",
+                "--caption_column=caption",
+
+                "--resolution=512",
+                
+                "--dataloader_num_workers=16",
+                "--learning_rate=1e-5",
+
+                // "--gradient_accumulation_steps=4", // should be 4 times tran_batch_size ? origin is 8
+                // "--mixed_precision=fp16",
+                // "--gradient_checkpointing",
+                // "--use_8bit_adam",
+                // "--enable_xformers_memory_efficient_attention",
+
+                // "--repo=/data/coding/upload-data/data/sd_models/SDXL-Lightning",
+                // "--ckpt=sdxl_lightning_8step_unet.safetensors",
+                // "--num_inference_steps=8",
+                "--proportion_empty_prompts=0",
+
+                "--train_batch_size=12",
+                "--validation_steps=500",
+                "--checkpointing_steps=5000",
+                "--num_train_epochs=3000",
+                "--max_train_samples=10000",
+                
+                "--num_validation_images=1",
+                
+                "--dataset_name=/data/coding/upload-data/data/sd_models/sd_training_Rain200H/",
+                "--dataset_revision=",
+                "--image_column=target_input",
+                "--conditioning_image_column=control_input",
+                "--validation_image", "Rain200H/train/input/5.png",
+                "--validation_prompt", "",
+                // "--resume_from_checkpoint=latest"
+            ],
+            "justMyCode": false
+        },
+
         {
             "name": "Launch ORIGIN train_controlnet_sdxl_light",
             "type": "debugpy",
@@ -83,7 +142,7 @@
                 "PYTHONPATH": "${workspaceFolder}",
             },
             "args": [
-                "--pretrained_model_name_or_path=stabilityai/stable-diffusion-xl-base-1.0",
+                "--pretrained_model_name_or_path=/data/coding/upload-data/data/sd_models/stable-diffusion-xl-base-1.0",
                 "--output_dir=test",
                 "--tracker_project_name=train_sdxl_light_controlnet",
                 "--seed=123123",
@@ -106,7 +165,7 @@
                 "--mixed_precision=fp16",
                 "--gradient_checkpointing",
                 "--use_8bit_adam",
-                "--repo=ByteDance/SDXL-Lightning",
+                "--repo=/data/coding/upload-data/data/sd_models/SDXL-Lightning",
                 "--ckpt=sdxl_lightning_8step_unet.safetensors",
                 "--num_inference_steps=8",
                 "--enable_xformers_memory_efficient_attention"

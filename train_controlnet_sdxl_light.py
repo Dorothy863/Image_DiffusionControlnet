@@ -74,17 +74,9 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
 
     if not is_final_validation:
         controlnet = accelerator.unwrap_model(controlnet)
-        pipeline = StableDiffusionXLControlNetPipeline.from_pretrained(
-            args.pretrained_model_name_or_path,
-            vae=vae,
-            unet=unet,
-            controlnet=controlnet,
-            revision=args.revision,
-            variant=args.variant,
-            torch_dtype=weight_dtype,
-        )
     else:
         controlnet = ControlNetModel.from_pretrained(args.output_dir, torch_dtype=weight_dtype)
+        
         if args.pretrained_vae_model_name_or_path is not None:
             vae = AutoencoderKL.from_pretrained(args.pretrained_vae_model_name_or_path, torch_dtype=weight_dtype)
         else:
@@ -92,14 +84,22 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
                 args.pretrained_model_name_or_path, subfolder="vae", torch_dtype=weight_dtype
             )
 
-        pipeline = StableDiffusionXLControlNetPipeline.from_pretrained(
-            args.pretrained_model_name_or_path,
-            vae=vae,
-            controlnet=controlnet,
-            revision=args.revision,
-            variant=args.variant,
-            torch_dtype=weight_dtype,
-        )
+            unet = UNet2DConditionModel.from_config(
+                args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
+            )
+            # unet.load_state_dict(load_file(hf_hub_download(args.repo, args.ckpt)))
+            unet.load_state_dict(load_file(os.path.join(args.repo, args.ckpt)))
+            # unet.to(accelerator.device, dtype=weight_dtype)
+
+    pipeline = StableDiffusionXLControlNetPipeline.from_pretrained(
+        args.pretrained_model_name_or_path,
+        vae=vae,
+        unet=unet,
+        controlnet=controlnet,
+        revision=args.revision,
+        variant=args.variant,
+        torch_dtype=weight_dtype,
+    )
 
     pipeline.scheduler = UniPCMultistepScheduler.from_config(pipeline.scheduler.config)
     pipeline = pipeline.to(accelerator.device)
@@ -142,7 +142,7 @@ def log_validation(vae, unet, controlnet, args, accelerator, weight_dtype, step,
         for _ in range(args.num_validation_images):
             with autocast_ctx:
                 image = pipeline(
-                    prompt=validation_prompt, image=validation_image, num_inference_steps=args.num_inference_steps, generator=generator
+                    prompt=validation_prompt, negative_prompt='', image=validation_image, num_inference_steps=args.num_inference_steps, generator=generator
                 ).images[0]
             images.append(image)
 
@@ -784,7 +784,7 @@ def prepare_train_dataset(dataset, accelerator):
             transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
             transforms.CenterCrop(args.resolution),
             transforms.ToTensor(),
-            transforms.Normalize([0.5], [0.5]),
+            # transforms.Normalize([0.5], [0.5]),
         ]
     )
 
@@ -931,7 +931,9 @@ def main(args):
     unet = UNet2DConditionModel.from_config(
         args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
     )
-    unet.load_state_dict(load_file(hf_hub_download(args.repo, args.ckpt)))
+    # unet.load_state_dict(load_file(hf_hub_download(args.repo, args.ckpt)))
+    unet.load_state_dict(load_file(os.path.join(args.repo, args.ckpt)))
+    
 
     if args.controlnet_model_name_or_path:
         logger.info("Loading existing controlnet weights")
@@ -1250,8 +1252,11 @@ def main(args):
                 model_pred = unet(
                     noisy_latents,
                     timesteps,
-                    encoder_hidden_states=batch["prompt_ids"],
-                    added_cond_kwargs=batch["unet_added_conditions"],
+                    encoder_hidden_states=batch["prompt_ids"].to(dtype=weight_dtype),
+                    added_cond_kwargs={
+                        'text_embeds': batch["unet_added_conditions"]['text_embeds'].to(dtype=weight_dtype),
+                        'time_ids': batch["unet_added_conditions"]['time_ids'].to(dtype=weight_dtype),
+                    },
                     down_block_additional_residuals=[
                         sample.to(dtype=weight_dtype) for sample in down_block_res_samples
                     ],
